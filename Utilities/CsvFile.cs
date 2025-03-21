@@ -1,7 +1,7 @@
 ﻿namespace PathfindingAlgorithmsComparison.Utilities;
 using System.Diagnostics;
 
-public class CsvManager // todo: move to own repo and link here
+public class CsvFile // todo: move to own repo and link here
     // todo: EditContent(field, value)
 {
     private struct ContentEntry
