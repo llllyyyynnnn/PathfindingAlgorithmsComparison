@@ -40,11 +40,12 @@ public class
 
     private Timers.CPU _cpu = new Timers.CPU();
 
-    private int
-        algorithmsMaxIncrements =
-            10; // the amount of times we want to increment by nodesIncrementAmount, to test performance with smaller & larger graphs
-
+    private int algorithmsMaxIncrements = 8; // the amount of times we want to increment by nodesIncrementAmount, to test performance with smaller & larger graphs
+    private int repeatPerGraph = 4;
     private int nodesIncrementAmount = 100;
+    private int nodePercentageBase = 20;
+    private int nodePercentageMaximum = 80;
+    private int nodePercentageIncrement = 15;
 
     private void StartTimers()
     {
@@ -60,44 +61,92 @@ public class
         Console.WriteLine($"CPU: {_cpu.GetElapsedMilliseconds()} ms");
     }
 
-    public class
-        TestResults // each result will be returned using this class, so that we can add it to a list and save it to csv for later analysis
+    public class TestResults // each result will be returned using this class, so that we can add it to a list and save it to csv for later analysis
     {
         public required string AlgorithmName;
         public required double StopwatchElapsedMilliseconds;
         public required double CpuElapsedMilliseconds;
         public required int NodesAmount;
+        public required double NodesPercentage;
+        public required int repeatPerGraph;
+        public required string BuildConfiguration;
     }
 
-    public TestResults CreateTestResults(string algorithmName, double stopwatchElapsedMilliseconds,
-        double cpuElapsedMilliseconds, int nodesAmount)
+    public TestResults CreateTestResults(string algorithmName, double stopwatchElapsedMilliseconds, double cpuElapsedMilliseconds, int nodesAmount, double nodesPercentage)
     {
         TestResults results = new TestResults
         {
             AlgorithmName = algorithmName,
-            StopwatchElapsedMilliseconds = _stopwatch.GetElapsedMilliseconds(),
-            CpuElapsedMilliseconds = _cpu.GetElapsedMilliseconds(),
-            NodesAmount = nodesAmount
+            StopwatchElapsedMilliseconds = stopwatchElapsedMilliseconds,
+            CpuElapsedMilliseconds = cpuElapsedMilliseconds,
+            NodesAmount = nodesAmount,
+            NodesPercentage = nodesPercentage,
+            repeatPerGraph = repeatPerGraph,
+#if DEBUG
+            BuildConfiguration = "Debug"
+#else // assume it's on release (since we only have 2, for now at least), if there's more than 1 defined configuration then it will not work as everything that isnt debug is then release
+            BuildConfiguration = "Release"
+#endif
         };
 
         return results;
     }
-
-    public CsvFile
-        WriteResultsToCsv(string path,
-            List<TestResults> results) // if the file already exists, we just append the entries. else, we initialize it using the predefined template
+    public CsvFile WriteResultsToCsv(string path, List<TestResults> results) // if the file already exists, we just append the entries. else, we initialize it using the predefined template
     {
         CsvFile file = new CsvFile();
         file.Path = path;
-        if (!File.Exists(path)) file.Initialize("Algorithm;Stopwatch;Cpu;Nodes");
+        if (!File.Exists(path)) file.Initialize("Algorithm;Stopwatch;Cpu;Nodes;Percentage; Repeated; Build Configuration");
 
         foreach (TestResults res in results)
         {
             file.Append(
-                $"{res.AlgorithmName};{res.StopwatchElapsedMilliseconds} ms;{res.CpuElapsedMilliseconds} ms;{res.NodesAmount}");
+                $"{res.AlgorithmName};{res.StopwatchElapsedMilliseconds} ms;{res.CpuElapsedMilliseconds} ms;{res.NodesAmount}; {res.NodesPercentage}%; {res.repeatPerGraph}; {res.BuildConfiguration}");
         }
 
         return file;
+    }
+
+    private void RunPathfindingAlgorithms(List<TestResults> floydTestResults, List<TestResults> dijkstraTestResults, Graph graph, int nodeAmount, int nodePercentage) {
+        List<double[,]> distancesFloyd = new List<double[,]>();
+        List<double[,]> distancesDijkstra = new List<double[,]>();
+
+        StartTimers();
+        for (int i = 0; i < repeatPerGraph; i++)
+            distancesFloyd.Add(FloydWarshallShortestPath.Execute(graph));
+        StopTimers();
+
+        double floydStopwatchTime = _stopwatch.GetElapsedMilliseconds();
+        double floydCpuTime = _cpu.GetElapsedMilliseconds();
+        Console.WriteLine($"Floyd Warshalls algorithm has finished running");
+
+        StartTimers();
+        for (int i = 0; i < repeatPerGraph; i++)
+            distancesDijkstra.Add(DijkstraShortestPath.Execute(graph));
+        StopTimers();
+
+        double dijkstraStopwatchTime = _stopwatch.GetElapsedMilliseconds();
+        double dijkstraCpuTime = _cpu.GetElapsedMilliseconds();
+        Console.WriteLine($"Dijkstras algorithm has finished running");
+        Console.WriteLine($"Algorithms have finished running {repeatPerGraph} times for {nodeAmount}, {nodePercentage}%");
+
+        try
+        {
+            if (distancesFloyd.Count == distancesDijkstra.Count) { // they should always be matching
+                for (int i = 0; i < distancesFloyd.Count; i++)
+                    VerifyDistances(distancesFloyd[i], distancesDijkstra[i]);
+            }
+            else
+            {
+                throw new Exception("Lists did not match.");
+            }
+
+            floydTestResults.Add(CreateTestResults("Floyd Warshall", floydStopwatchTime, floydCpuTime, nodeAmount, nodePercentage));
+            dijkstraTestResults.Add(CreateTestResults("Dijkstra", dijkstraStopwatchTime, dijkstraCpuTime, nodeAmount, nodePercentage)); // add results to individual lists so we can sort them later in the csv file and have it consistent
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to verify: {ex.Message}");
+        }
     }
 
     public void Execute()
@@ -119,59 +168,18 @@ public class
              i < algorithmsMaxIncrements + 1;
              i++) // + 1, we don't want to start from 0 since then we'll have 0 nodes
         {
-            Graph
-                graph = new Graph(nodesIncrementAmount * i,
-                    50); // here, we create the graph that we're going to be using for the algorithms with x nodes and y percent (which determines the amount of possible edges)
+            int currentNodePercentage = nodePercentageBase;
+            int currentNodeAmount = nodesIncrementAmount * i;
 
-            StartTimers();
-            double[,]
-                floydDistances =
-                    FloydWarshallShortestPath
-                        .Execute(graph); // run floyd warshall's algorithm and store it in a variable 
-            StopTimers();
-
-            double floydStopwatchTime = _stopwatch.GetElapsedMilliseconds();
-            double floydCpuTime = _cpu.GetElapsedMilliseconds();
-            Console.WriteLine("Floyd Warshalls algorithm has finished running");
-
-            StartTimers();
-            double[,]
-                dijkstraDistances =
-                    DijkstraShortestPath
-                        .Execute(graph); // same as in the above one, we store the variable for interpretation
-            StopTimers();
-
-            double dijkstraStopwatchTime = _stopwatch.GetElapsedMilliseconds();
-            double
-                dijkstraCpuTime =
-                    _cpu.GetElapsedMilliseconds(); // we cache the variables here so we can add them to TestResults later, without the need of creating 2x timer objects
-            Console.WriteLine("Dijkstra algorithm has finished running");
-
-            try
+            while (currentNodePercentage <= nodePercentageMaximum)
             {
-                VerifyDistances(floydDistances,
-                    dijkstraDistances); // verify to make sure the algorithms are functioning as expected, we do this in try & catch statements since we return an exception if it fails
-                floydAlgorithmResults.Add(new TestResults
-                {
-                    AlgorithmName = "Floyd Warshall",
-                    StopwatchElapsedMilliseconds = floydStopwatchTime,
-                    CpuElapsedMilliseconds = floydCpuTime,
-                    NodesAmount = nodesIncrementAmount * i
-                });
+                Graph currentGraph = new Graph(currentNodeAmount, currentNodePercentage);
+                RunPathfindingAlgorithms(floydAlgorithmResults, dijkstraAlgorithmResults, currentGraph, currentNodeAmount, currentNodePercentage); // run the same function for each graph, saves to our defined lists at the top of the function and we then save it to csv
 
-                dijkstraAlgorithmResults.Add(new TestResults
-                {
-                    AlgorithmName = "Dijkstra",
-                    StopwatchElapsedMilliseconds = dijkstraStopwatchTime,
-                    CpuElapsedMilliseconds = dijkstraCpuTime,
-                    NodesAmount = nodesIncrementAmount * i
-                }); // add results to individual lists so we can sort them later in the csv file and have it consistent
-
-                //Console.WriteLine("The algorithms have been verified and match within a valid range."); // To avoid clutter, this is commented out since it doesn't contribute much. If something goes wrong, we mention it. Else, we don't.
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Failed to verify: {ex.Message}");
+                if (currentNodePercentage + nodePercentageIncrement > nodePercentageMaximum && currentNodePercentage != nodePercentageMaximum) // clamp the value if we reach the max
+                    currentNodePercentage = nodePercentageMaximum;
+                else
+                    currentNodePercentage += nodePercentageIncrement;
             }
 
             Console.WriteLine($"---- {i}/{algorithmsMaxIncrements} have been executed ----");
