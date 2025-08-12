@@ -13,12 +13,25 @@ public class DijkstraShortestPath
             double[] minDistances = new double[n]; // we store the shortest distances here
             Array.Fill(minDistances, double.MaxValue);
             minDistances[i] = 0;
+
+            bool[] visited = new bool[n]; // we store the nodes we already visited here
             priorityQueue.Enqueue(i, 0); // since it's our starting node, the distance has to be 0
 
             while (priorityQueue.TryDequeue(out int index, out double distance)) // loop through all nodes
             {
-                foreach (Edge edge in graph.Nodes[index].Edges) // for every edge in the nodes, we check if their distance alongside our current one results in a shorter or a longer path
+                if (visited[index]) // ignore if we already visited this index (node)
+                    continue;
+
+                visited[index] = true;
+
+                if (distance > minDistances[index])
+                    continue;
+
+                foreach (Edge edge in graph.Nodes[index].Edges)  // for every edge in the nodes, we check if their distance alongside our current one results in a shorter or a longer path
                 {
+                    if (visited[edge.End]) // don't revisit old nodes
+                        continue;
+
                     double newDistance = distance + edge.Length;
                     if (newDistance < minDistances[edge.End]) // if the new distance is outweighed by the old one, we update it
                     {
@@ -28,10 +41,10 @@ public class DijkstraShortestPath
                 }
             }
 
-            for (int j = 0; j < n; j++) 
+             for (int j = 0; j < n; j++) 
                 distances[i, j] = minDistances[j]; // we now set the shortest path, and we return it under for further use under since we have gotten the shortest path
         }
 
-        return distances; // we return for validation in the other functions, where we compare the two algorithms
+        return distances;
     }
 }
