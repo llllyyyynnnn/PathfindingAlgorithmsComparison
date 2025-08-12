@@ -15,14 +15,16 @@ public class DijkstraShortestPath
             minDistances[i] = 0;
 
             bool[] visited = new bool[n]; // we store the nodes we already visited here
+            int processed = 0;
             priorityQueue.Enqueue(i, 0); // since it's our starting node, the distance has to be 0
 
-            while (priorityQueue.TryDequeue(out int index, out double distance)) // loop through all nodes
+            while (priorityQueue.TryDequeue(out int index, out double distance) && n > processed) // loop through all nodes
             {
                 if (visited[index]) // ignore if we already visited this index (node)
                     continue;
 
                 visited[index] = true;
+                processed++;
 
                 if (distance > minDistances[index])
                     continue;
